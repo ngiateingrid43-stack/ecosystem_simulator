@@ -1,4 +1,3 @@
-
 #pragma once
 #include "Entity.h"
 #include "Structs.h"
