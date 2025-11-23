@@ -1,4 +1,3 @@
-
 #pragma once
 #include "Structs.h"
 #include <SDL3/SDL.h>
