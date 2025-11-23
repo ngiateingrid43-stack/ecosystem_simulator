@@ -1,8 +1,9 @@
-
 #pragma once
 #include <cstdint>
 #include <string>
 #include <cmath>
+#include <iostream>
+
 namespace Ecosystem {
     namespace Core {
         // STRUCTS POUR LES DONNÉES SIMPLES
@@ -48,7 +49,7 @@ namespace Ecosystem {
         };
 
         // Dans include/Core/Structs.h, à l'intérieur de namespace Ecosystem::Core
-        std::ostream& operator<<(std::ostream& os, const Vector2D& v) {
+        inline std::ostream& operator<<(std::ostream& os, const Vector2D& v) {
           return os << "(" << v.x << ", " << v.y << ")";
         }
 
