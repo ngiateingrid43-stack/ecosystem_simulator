@@ -1,16 +1,44 @@
+#include "Core/GameEngine.h" 
+#include <iostream> 
+#include <cstdlib> 
+#include <ctime> 
+#include <windows.h> 
+#include <thread>
 
-#include "Graphics/Window.h"
-#include "Core/Ecosystem.h"
-#include <iostream>
+int main(int argc, char* argv[]) {
+    SetConsoleOutputCP(CP_UTF8); 
+    // Initialisation de l'aléatoire 
+    std::srand(static_cast<unsigned int>(std::time(nullptr))); 
+     
+    std::cout << "🎮Démarrage du Simulateur d'Écosystème" << std::endl; 
+    std::cout << "=======================================" << std::endl; 
+     
+    // 🏗 Création du moteur de jeu 
+    Ecosystem::Core::GameEngine engine("Simulateur d'Écosystème Intelligent", 1200.0f, 800.0f);
+     
+    // ⚙Initialisation 
+    if (!engine.Initialize()) { 
+        std::cerr << "❌Erreur: Impossible d'initialiser le moteur de jeu" << std::endl;
+        return -1; 
+    }
+     
+    std::cout << "✅Moteur initialisé avec succès" << std::endl; 
+    std::cout << "🎯Lancement de la simulation..." << std::endl; 
+    std::cout << "=== CONTRÔLES ===" << std::endl; 
+    std::cout << "ESPACE: Pause/Reprise" << std::endl; 
+    std::cout << "R: Reset simulation" << std::endl; 
+    std::cout << "F: Ajouter nourriture" << std::endl; 
+    std::cout << "FLÈCHES: Vitesse simulation" << std::endl; 
+    std::cout << "ÉCHAP: Quitter" << std::endl; 
 
-int main() {
-    // Minimal entry point: create an ecosystem, initialize it, print a summary and exit.
-    Ecosystem::Core::Ecosystem ecosystem(1200.0f, 800.0f, 500);
-    ecosystem.Initialize(10, 5, 20);
-
-    std::cout << "Simulation démarrée: entités=" << ecosystem.GetEntityCount()
-              << " nourriture=" << ecosystem.GetFoodCount() << std::endl;
-
-    return 0;
-}
-
+    std::this_thread::sleep_for(std::chrono::milliseconds(2500));
+     
+    // Boucle principale 
+    engine.Run(); 
+     
+    // Arrêt propre 
+    engine.Shutdown(); 
+     
+    std::cout << "👋Simulation terminée. Au revoir !" << std::endl; 
+    return 0; 
+} 
