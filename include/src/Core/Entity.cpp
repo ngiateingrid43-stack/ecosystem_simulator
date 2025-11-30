@@ -1,197 +1,246 @@
-
-#include "Core/Entity.h"
-#include <cmath>
-#include <iostream>
+#include "Core/Ecosystem.h"
 #include <algorithm>
+#include <iostream>
 namespace Ecosystem {
     namespace Core {
-        // CONSTRUCTEUR PRINCIPAL
-        Entity::Entity(EntityType type, Vector2D pos, std::string entityName)
-        : mType(type), position(pos), name(entityName), 
-        mRandomGenerator(std::random_device{}()) // Initialisation du générateur alé
+        // CONSTRUCTEUR
+        Ecosystem::Ecosystem(float width, float height, int maxEntities)
+        : mWorldWidth(width), mWorldHeight(height), mMaxEntities(maxEntities),
+        mDayCycle(0), mRandomGenerator(std::random_device{}())
         {
-            // 🔧 INITIALISATION SELON LE TYPE
-            switch(mType) {
-                case EntityType::HERBIVORE:
-                    mEnergy = 80.0f;
-                    mMaxEnergy = 150.0f;
-                    mMaxAge = 200;
-                    color = Color::Blue();
-                    size = 8.0f;
-                break;
-                
-                case EntityType::CARNIVORE:
-                    mEnergy = 100.0f;
-                    mMaxEnergy = 200.0f;
-                    mMaxAge = 150;
-                    color = Color::Red();
-                    size = 12.0f;
-                break;
-                
-                case EntityType::PLANT:
-                    mEnergy = 50.0f;
-                    mMaxEnergy = 100.0f;
-                    mMaxAge = 300;
-                    color = Color::Green();
-                    size = 6.0f;
-                break;
-            }
-            
-            mAge = 0;
-            mIsAlive = true;
-            mVelocity = GenerateRandomDirection();
-            
-            std::cout << "🌱 Entité créée: " << name << " à (" << position.x << ", " << pos
-        }
-        // CONSTRUCTEUR DE COPIE
-        Entity::Entity(const Entity& other)
-        : mType(other.mType), position(other.position), name(other.name + "_copy"),
-        mEnergy(other.mEnergy * 0.7f), // Enfant a moins d'énergie
-        mMaxEnergy(other.mMaxEnergy),
-        mAge(0), // Nouvelle entité, âge remis à 0
-        mMaxAge(other.mMaxAge),
-        mIsAlive(true),
-        mVelocity(other.mVelocity),
-        color(other.color),
-        size(other.size * 0.8f), // Enfant plus petit
-        mRandomGenerator(std::random_device{}())
-        {
-            std::cout << "👶 Copie d'entité créée: " << name << std::endl;
+            // Initialisation des statistiques
+            mStats = {0, 0, 0, 0, 0, 0};
+            std::cout << "🌍 Écosystème créé: " << width << "x" << height << std::endl;
         }
         // DESTRUCTEUR
-        Entity::~Entity() {
-            std::cout << "💀 Entité détruite: " << name << " (Âge: " << mAge << ")" << std:
+        Ecosystem::~Ecosystem() {
+            std::cout << "🌍 Écosystème détruit (" << mEntities.size() << " entités nettoyées)" << std::endl;
         }
-        // ⚙️ MISE À JOUR PRINCIPALE
-        void Entity::Update(float deltaTime) {
-            if (!mIsAlive) return;
-            
-            // 🔄 PROCESSUS DE VIE
-            ConsumeEnergy(deltaTime);
-            Age(deltaTime);
-            Move(deltaTime);
-            CheckVitality();
+
+        // ⚙️ INITIALISATION
+        void Ecosystem::Initialize(int initialHerbivores, int initialCarnivores, int initialPlants) {
+            mEntities.clear();
+            mFoodSources.clear();
+
+            // Création des entités initiales
+            for (int i = 0; i < initialHerbivores; ++i) {
+                SpawnRandomEntity(EntityType::HERBIVORE);
+            }
+
+            for (int i = 0; i < initialCarnivores; ++i) {
+                SpawnRandomEntity(EntityType::CARNIVORE);
+            }
+
+            for (int i = 0; i < initialPlants; ++i) {
+                SpawnRandomEntity(EntityType::PLANT);
+            }
+
+            // Nourriture initiale
+            SpawnFood(20);
+
+            std::cout << "🌱 Écosystème initialisé avec " << mEntities.size() << " entités" << std::endl;
         }
-        // 🚶 MOUVEMENT
-        void Entity::Move(float deltaTime) {
-            if (mType == EntityType::PLANT) return; // Les plantes ne bougent pas
-            
-            // 🎲 Comportement aléatoire occasionnel
-            std::uniform_real_distribution<float> chance(0.0f, 1.0f);
-            if (chance(mRandomGenerator) < 0.02f) {
-                mVelocity = GenerateRandomDirection();
+        // 🔄 MISE À JOUR
+        void Ecosystem::Update(float deltaTime) {
+            // Mise à jour de toutes les entités
+            for (auto& entity : mEntities) {
+                entity->Update(deltaTime);
             }
             
-            // 📐 Application du mouvement
-            position = position + mVelocity * deltaTime * 20.0f;
+            // Gestion des comportements
+            HandleEating();
+            HandleReproduction();
+            RemoveDeadEntities();
+            HandlePlantGrowth(deltaTime);
             
-            // 🔄 Consommation d'énergie due au mouvement
-            mEnergy -= mVelocity.Distance(Vector2D(0, 0)) * deltaTime * 0.1f;
+            // Mise à jour des statistiques
+            UpdateStatistics();
+            mDayCycle++;
+            
         }
-        // MANGER
-        void Entity::Eat(float energy) {
-            mEnergy += energy;
-            if (mEnergy > mMaxEnergy) {
-                mEnergy = mMaxEnergy;
+
+        // Demande à chaque entité herbivore de chercher la nourriture disponible
+        void Ecosystem::SeekFoodForEntities() {
+            for (auto& entity : mEntities) {
+                if (entity->GetType() == EntityType::HERBIVORE && entity->IsAlive()) {
+                    auto steering = entity->SeekFood(mFoodSources);
+                    entity->ApplyForce(steering);
+                }
             }
-            std::cout << " " << name << " mange et gagne " << energy << " énergie" << std
         }
-        // 🔄 CONSOMMATION D'ÉNERGIE
-        void Entity::ConsumeEnergy(float deltaTime) {
-            float baseConsumption = 0.0f;
+
+        // GESTION DE L'ALIMENTATION
+        void Ecosystem::HandleEating() {
+            // HERBIVORES mangent NOURRITURE (Carrés verts statiques)
+            for (auto& entity : mEntities) {
+                if (entity->GetType() == EntityType::HERBIVORE) {
+                    auto it = mFoodSources.begin();
+                    while (it != mFoodSources.end()) {
+                        if (entity->position.Distance(it->position) < (entity->size + 5.0f)) {
+                            entity->Eat(it->energyValue);
+                            it = mFoodSources.erase(it); // Supprime la nourriture mangée
+                        } else {
+                            ++it;
+                        }
+                    }
+                }
+            }
+
+            // CARNIVORES mangent HERBIVORES
+            for (auto& predator : mEntities) {
+                if (predator->GetType() != EntityType::CARNIVORE) continue;
+
+                for (auto& prey : mEntities) {
+                    if (prey->GetType() == EntityType::HERBIVORE && prey->IsAlive()) {
+                        if (predator->position.Distance(prey->position) < (predator->size + prey->size)) {
+                            predator->Eat(50.0f); // Gros gain d'énergie
+                            prey->Eat(-1000.0f); // La proie meurt instantanément (énergie négative)
+                            std::cout << "🦁 MIAM ! Un carnivore a mangé un herbivore." << std::endl;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 🍎 GÉNÉRATION DE NOURRITURE
+        void Ecosystem::SpawnFood(int count) {
+            for (int i = 0; i < count; ++i) {
+                if (mFoodSources.size() < 100) { // Limite maximale de nourriture
+                    Vector2D position = GetRandomPosition();
+                    mFoodSources.emplace_back(position, 25.0f);
+                }
+            }
+        }
+        // 💀 SUPPRESSION DES ENTITÉS MORTES
+        void Ecosystem::RemoveDeadEntities() {
+            int initialCount = mEntities.size();
             
-            switch(mType) {
+            mEntities.erase(
+            std::remove_if(mEntities.begin(), mEntities.end(),
+            [](const std::unique_ptr<Entity>& entity) { 
+            return !entity->IsAlive(); 
+            }),
+            mEntities.end()
+            );
+            
+            int removedCount = initialCount - mEntities.size();
+            if (removedCount > 0) {
+            mStats.deathsToday += removedCount;
+            }
+        }
+        // 👶 GESTION DE LA REPRODUCTION
+        void Ecosystem::HandleReproduction() {
+            std::vector<std::unique_ptr<Entity>> newEntities;
+            
+            for (auto& entity : mEntities) {
+                if (entity->CanReproduce() && mEntities.size() < mMaxEntities) {
+                    auto baby = entity->Reproduce();
+                    if (baby) {
+                        newEntities.push_back(std::move(baby));
+                        mStats.birthsToday++;
+                    }
+                }
+            }
+            
+            // Ajout des nouveaux entités
+            for (auto& newEntity : newEntities) {
+                mEntities.push_back(std::move(newEntity));
+            }
+        }
+        /*/ GESTION DE L'ALIMENTATION
+        void Ecosystem::HandleEating() {
+            // Ici on implémenterait la logique de recherche de nourriture
+            // Pour l'instant, gestion simplifiée
+            for (auto& entity : mEntities) {
+                if (entity->GetType() == EntityType::PLANT) {
+                    // Les plantes génèrent de l'énergie
+                    entity->Eat(0.1f);
+                }
+            }
+        }*/
+       
+        // 📊 MISE À JOUR DES STATISTIQUES
+        void Ecosystem::UpdateStatistics() {
+            mStats.totalHerbivores = 0;
+            mStats.totalCarnivores = 0;
+            mStats.totalPlants = 0;
+            mStats.totalFood = mFoodSources.size();
+            
+            for (const auto& entity : mEntities) {
+                switch (entity->GetType()) {
+                    case EntityType::HERBIVORE:
+                    mStats.totalHerbivores++;
+                    break;
+                    case EntityType::CARNIVORE:
+                    mStats.totalCarnivores++;
+                    break;
+                    case EntityType::PLANT:
+                    mStats.totalPlants++;
+                    break;
+                }
+            }
+        }
+        // 🎲 CRÉATION D'ENTITÉ ALÉATOIRE
+        void Ecosystem::SpawnRandomEntity(EntityType type) {
+            if (mEntities.size() >= mMaxEntities) return;
+            
+            Vector2D position = GetRandomPosition();
+            std::string name;
+            
+            switch (type) {
+
             case EntityType::HERBIVORE:
-            baseConsumption = 1.5f;
+                name = "Herbivore_" + std::to_string(mStats.totalHerbivores);
             break;
+
             case EntityType::CARNIVORE:
-            baseConsumption = 2.0f;
+                name = "Carnivore_" + std::to_string(mStats.totalCarnivores);
             break;
+
             case EntityType::PLANT:
-            baseConsumption = -0.5f; // Les plantes génèrent de l'énergie !
+                name = "Plant_" + std::to_string(mStats.totalPlants);
             break;
+
             }
             
-            mEnergy -= baseConsumption * deltaTime;
+            mEntities.push_back(std::make_unique<Entity>(type, position, name));
         }
-        // 🎂 VIEILLISSEMENT
-        void Entity::Age(float deltaTime) {
-            mAge += static_cast<int>(deltaTime * 10.0f); // Accéléré pour la simulation
+
+        // 🎯 POSITION ALÉATOIRE
+        Vector2D Ecosystem::GetRandomPosition() const {
+            std::uniform_real_distribution<float> distX(0.0f, mWorldWidth);
+            std::uniform_real_distribution<float> distY(0.0f, mWorldHeight);
+            return Vector2D(distX(mRandomGenerator), distY(mRandomGenerator));
         }
-        // ❤️ VÉRIFICATION DE LA SANTÉ
-        void Entity::CheckVitality() {
-            if (mEnergy <= 0.0f || mAge >= mMaxAge) {
-            mIsAlive = false;
-            std::cout << "💀 " << name << " meurt - ";
-            if (mEnergy <= 0) std::cout << "Faim";
-            else std::cout << "Vieillesse";
-            std::cout << std::endl;
-            }
-        }
-        // 👶 REPRODUCTION
-        bool Entity::CanReproduce() const {
-            return mIsAlive && mEnergy > mMaxEnergy * 0.8f && mAge > 20;
-        }
-        std::unique_ptr<Entity> Entity::Reproduce() {
-            if (!CanReproduce()) return nullptr;
-            
-            // 🎲 Chance de reproduction
+
+        // 🌿 CROISSANCE DES PLANTES
+        void Ecosystem::HandlePlantGrowth(float deltaTime) {
+            // Occasionnellement, faire pousser de nouvelles plantes
             std::uniform_real_distribution<float> chance(0.0f, 1.0f);
-            if (chance(mRandomGenerator) < 0.3f) {
-                mEnergy *= 0.6f; // Coût énergétique de la reproduction
-                return std::make_unique<Entity>(*this); // Utilise le constructeur de copie
+            if (chance(mRandomGenerator) < 0.01f && mEntities.size() < mMaxEntities) {
+                SpawnRandomEntity(EntityType::PLANT);
+            }
+        }
+
+        // 🎨 RENDU
+        void Ecosystem::Render(SDL_Renderer* renderer) const {
+            // Rendu de la nourriture
+                for (const auto& food : mFoodSources) {
+                SDL_FRect rect = {
+                    food.position.x - 3.0f,
+                    food.position.y - 3.0f,
+                    6.0f,
+                    6.0f
+                };
+                SDL_SetRenderDrawColor(renderer, food.color.r, food.color.g, food.color.b, food.color.a); 
+                SDL_RenderFillRect(renderer, &rect);
             }
             
-            return nullptr;
-        }
-        // 🎲 GÉNÉRATION DE DIRECTION ALÉATOIRE
-        Vector2D Entity::GenerateRandomDirection() {
-            std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
-            return Vector2D(dist(mRandomGenerator), dist(mRandomGenerator));
-        }
-        // 🎨 CALCUL DE LA COULEUR BASÉE SUR L'ÉTAT
-        Color Entity::CalculateColorBasedOnState() const {
-            float energyRatio = GetEnergyPercentage();
-            
-            Color baseColor = color;
-            
-            // 🔴 Rouge si faible énergie
-            if (energyRatio < 0.3f) {
-                baseColor.r = 255;
-                baseColor.g = static_cast<uint8_t>(baseColor.g * energyRatio);
-                baseColor.b = static_cast<uint8_t>(baseColor.b * energyRatio);
+            // Rendu des entités
+            for (const auto& entity : mEntities) {
+                entity->Render(renderer);
             }
-            
-            return baseColor;
-        }
-        // 🎨 RENDU GRAPHIQUE
-        void Entity::Render(SDL_Renderer* renderer) const {
-            if (!mIsAlive) return;
-            
-            Color renderColor = CalculateColorBasedOnState();
-            
-            SDL_FRect rect = {
-                position.x - size / 2.0f,
-                position.y - size / 2.0f,
-                size,
-                size
-            };
-            
-            SDL_SetRenderDrawColor(renderer, renderColor.r, renderColor.g, renderColor.b, r
-            SDL_RenderFillRect(renderer, &rect);
-            
-            // 🔵 Indicateur d'énergie (barre de vie)
-            if (mType != EntityType::PLANT) {
-            float energyBarWidth = size * GetEnergyPercentage();
-            SDL_FRect energyBar = {
-                position.x - size / 2.0f,
-                position.y - size / 2.0f - 3.0f,
-                energyBarWidth,
-                2.0f
-            };
-            SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255);
-            SDL_RenderFillRect(renderer, &energyBar);
-            }
+    
         }
     } // namespace Core
 } // namespace Ecosystem
